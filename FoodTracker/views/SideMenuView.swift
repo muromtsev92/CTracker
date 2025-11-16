@@ -15,7 +15,7 @@ struct SideMenuView: View {
         NavigationStack {
             List {
                 NavigationLink("Каталог блюд") {
-                    Text("Dish list placeholder")
+                    DishListView()
                 }
                 NavigationLink("Настройки") {
                     Text("Settings placeholder")

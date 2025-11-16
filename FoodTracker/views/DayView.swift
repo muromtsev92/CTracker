@@ -1,11 +1,3 @@
-//
-//  DayView.swift
-//  FoodTracker
-//
-//  Created by Sergei Muromtsev on 16.11.2025.
-//
-
-
 import SwiftUI
 import SwiftData
 
@@ -16,24 +8,14 @@ struct DayView: View {
     // выбранная дата
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
 
-    // открыть/закрыть меню
+    // меню
     @State private var showMenu = false
 
-    // список записей (сюда подгрузим через init)
-    @Query private var eatenToday: [EatenMeal]
+    // экран выбора блюда
+    @State private var showDishPicker = false
 
-    init() {
-        // Фильтр по дате будет обновляться при смене даты
-        let today = Calendar.current.startOfDay(for: Date())
-
-        _eatenToday = Query(
-            filter: #Predicate<EatenMeal> { meal in
-                meal.date == today
-            },
-            sort: \.time,
-            order: .reverse
-        )
-    }
+    // динамический список съеденных блюд
+    @State private var eatenMeals: [EatenMeal] = []
 
     var body: some View {
         NavigationStack {
@@ -61,6 +43,12 @@ struct DayView: View {
                 }
                 .padding(.horizontal)
                 .padding(.top, 12)
+                .gesture(
+                    DragGesture().onEnded { value in
+                        if value.translation.width > 80 { changeDay(-1) }
+                        else if value.translation.width < -80 { changeDay(1) }
+                    }
+                )
 
                 // MARK: - Total
                 HStack {
@@ -75,11 +63,17 @@ struct DayView: View {
 
                 // MARK: - List of eaten meals
                 List {
-                    ForEach(eatenToday) { item in
+                    ForEach(eatenMeals) { item in
                         HStack {
-                            Text(item.dish.title)
+                            VStack(alignment: .leading) {
+                                Text(item.dish.title)
+                                Text(timeString(item.time))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                             Spacer()
                             Text("\(item.dish.calories) ккал")
+                                .fontWeight(.semibold)
                         }
                     }
                     .onDelete(perform: delete)
@@ -87,7 +81,9 @@ struct DayView: View {
                 .listStyle(.plain)
 
                 // MARK: - Add button
-                Button(action: { /* откроем выбор блюда позже */ }) {
+                Button(action: {
+                    showDishPicker = true
+                }) {
                     Text("Добавить")
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -96,6 +92,11 @@ struct DayView: View {
                         .cornerRadius(12)
                         .padding(.horizontal)
                         .padding(.bottom)
+                }
+                .sheet(isPresented: $showDishPicker) {
+                    DishPickerView { dish in
+                        addEatenMeal(dish: dish)
+                    }
                 }
 
             }
@@ -110,31 +111,72 @@ struct DayView: View {
             .sheet(isPresented: $showMenu) {
                 SideMenuView()
             }
+            .onAppear { loadMeals(for: selectedDate) }
+            .onChange(of: selectedDate) { newDate in
+                loadMeals(for: newDate)
+            }
         }
     }
 
-    // MARK: - Logic
+    // MARK: - Fetch meals for date
+    private func loadMeals(for date: Date) {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
 
+        let descriptor = FetchDescriptor<EatenMeal>(
+            predicate: #Predicate { meal in
+                meal.date >= dayStart && meal.date < dayEnd
+            },
+            sortBy: [SortDescriptor(\EatenMeal.time, order: .reverse)]
+        )
+
+        if let result = try? context.fetch(descriptor) {
+            eatenMeals = result
+        }
+    }
+
+    // MARK: - Date change
     private func changeDay(_ offset: Int) {
         if let newDate = Calendar.current.date(byAdding: .day, value: offset, to: selectedDate) {
             selectedDate = Calendar.current.startOfDay(for: newDate)
         }
     }
 
+    // MARK: - Formatters
     private func dateString(_ date: Date) -> String {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
         f.dateFormat = "d MMM yyyy"
         return f.string(from: date)
     }
 
-    private var totalCalories: Int {
-        eatenToday.reduce(0) { $0 + $1.dish.calories }
+    private func timeString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
     }
 
+    // MARK: - Total calories
+    private var totalCalories: Int {
+        eatenMeals.reduce(0) { $0 + $1.dish.calories }
+    }
+
+    // MARK: - Delete eaten meal
     private func delete(at offsets: IndexSet) {
         for index in offsets {
-            context.delete(eatenToday[index])
+            context.delete(eatenMeals[index])
         }
+        eatenMeals.remove(atOffsets: offsets)
+    }
+
+    // MARK: - Add eaten meal
+    private func addEatenMeal(dish: Dish) {
+        let record = EatenMeal(
+            date: selectedDate,
+            dish: dish
+        )
+        context.insert(record)
+        loadMeals(for: selectedDate)
     }
 }
 
