@@ -2,14 +2,12 @@ import Foundation
 import SwiftData
 
 @Model
-final class Meal {
+final class Dish {
     var title: String
     var calories: Int
-    var date: Date
 
-    init(title: String, calories: Int, date: Date = .now) {
+    init(title: String, calories: Int) {
         self.title = title
         self.calories = calories
-        self.date = date
     }
 }
